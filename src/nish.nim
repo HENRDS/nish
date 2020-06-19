@@ -3,7 +3,7 @@ import os, osproc, strutils, strtabs, terminal, streams, linenoise
 from posix import getlogin, gethostname
 from shellparse import shellSplit
 
-type 
+type
   NiShell = object
     env: StringTableRef
     lastExitCode: int
@@ -18,11 +18,13 @@ proc getHostname(): string =
   else:
     result = $cs
 
-proc writePrompt(s: var NiShell) =
+proc buildPrompt(s: var NiShell): string =
+  result = ""
   if s.lastExitCode != 0:
-    stdout.styledWrite(fgRed, styleBright, "[", $s.lastExitCode, "]", resetStyle)
-  stdout.styledWrite(fgBlue, $getlogin(), "@", getHostname(), resetStyle)
-  stdout.styledWrite(":", fgCyan, getCurrentDir(), "> ", resetStyle)
+    result &= "[" & $s.lastExitCode & "]"
+
+  result &= $getlogin() & "@" & getHostname()
+  result &= ":" & getCurrentDir() & "> "
 
 proc resolvePath(s: var NiShell, cmd: string): string =
   let paths = s.env["PATH"].split({':'})
@@ -36,27 +38,29 @@ proc initNiShell(): NiShell =
   result = NiShell(env: newStringTable(), lastExitCode: 0)
   result.env["PATH"] = getEnv("PATH", "/usr/local/bin:/usr/bin:/bin")
 
-
-
 proc parseCmd(s: var NiShell, line: string): (string, seq[string]) =
   let parts = line.shellSplit()
   result = (parts[0], parts[1..parts.high])
 
-
 proc writeError(msg: string) =
   stdout.styledWrite(fgRed, msg, resetStyle)
 
-proc main(s: var NiShell) =
-  while true:
-    writePrompt(s)
-    let line = linenoise.readLine("").string.strip()
+proc readInput(s: var NiShell): string =
+  var line = linenoise.readLine(buildPrompt(s))
+  result = $line
+  linenoise.free(line)
 
-    if line == "":
+proc main(s: var NiShell) =
+  while true: 
+    let line = s.readInput().strip()
+    if len(line) == 0:
       s.lastExitCode = 0
       continue
     var (cmd, args) = parseCmd(s, line)
     if '/' notin cmd:
       cmd = resolvePath(s, cmd)
+    else:
+      cmd = expandTilde(cmd)
     case cmd
     of "cd":
       if len(args) > 1:
